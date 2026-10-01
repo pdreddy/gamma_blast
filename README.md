@@ -96,6 +96,18 @@ Streamlit without deleting your `.env` or trading database:
 ./run.sh
 ```
 
+On the first run, the script creates a safe `.env` template. Add your FYERS App
+ID and Secret ID, then complete the browser login and validate the connection:
+
+```bash
+./run.sh --login
+./run.sh --preflight
+./run.sh
+```
+
+FYERS access tokens expire, so use `./run.sh --login` again whenever the UI says
+the connection is not configured. The script updates only your local `.env`.
+
 You can override the interface or port when needed:
 
 ```bash

@@ -159,7 +159,15 @@ elif page == "Backtest":
     )
 
     if not b:
-        st.error("FYERS connection is not configured. Run login_local.py first.")
+        st.error("FYERS connection is not configured.", icon="🔐")
+        st.markdown("""
+        **Connect FYERS in three steps:**
+        1. Add `FYERS_APP_ID` and `FYERS_SECRET_ID` to your local `.env` file.
+        2. Set the FYERS app redirect URL to `http://localhost:8080/`.
+        3. Stop this app, run `./run.sh --login`, then restart with `./run.sh`.
+
+        Your access token is saved locally and is never required in this screen.
+        """)
     else:
         with st.container(border=True):
             st.markdown("#### Test configuration")
