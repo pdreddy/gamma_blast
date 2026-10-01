@@ -16,6 +16,12 @@ class StrategyConfig:
     supertrend_period: int = int(os.getenv("SUPERTREND_PERIOD", "10"))
     supertrend_multiplier: float = float(os.getenv("SUPERTREND_MULTIPLIER", "3"))
     breakout_lookback: int = int(os.getenv("BREAKOUT_LOOKBACK", "5"))
+    min_ha_body_atr: float = float(os.getenv("MIN_HA_BODY_ATR", "0.10"))
+    max_breakout_atr: float = float(os.getenv("MAX_BREAKOUT_ATR", "0.75"))
+    min_close_location: float = float(os.getenv("MIN_CLOSE_LOCATION", "0.70"))
+    rsi_period: int = int(os.getenv("RSI_PERIOD", "14"))
+    bullish_rsi_min: float = float(os.getenv("BULLISH_RSI_MIN", "55"))
+    bearish_rsi_max: float = float(os.getenv("BEARISH_RSI_MAX", "45"))
     max_capital_per_trade: float = float(os.getenv("MAX_CAPITAL_PER_TRADE", "12000"))
     max_trades_per_index_per_day: int = int(os.getenv("MAX_TRADES_PER_INDEX_PER_DAY", "1"))
     expiry_day_only: bool = os.getenv("EXPIRY_DAY_ONLY", "true").lower() == "true"

@@ -61,43 +61,95 @@ def heikin_ashi(df):
         ha_open.iloc[i] = (ha_open.iloc[i-1] + ha_close.iloc[i-1]) / 2
     return ha_open, ha_close
 
-def signal_from_candles(candles, period=10, multiplier=3.0, lookback=5):
-    if candles is None or len(candles) < max(period + 2, lookback + 2):
-        return None
+
+def rsi(series, period=14):
+    """Wilder RSI with neutral values during the warm-up period."""
+    delta = series.diff()
+    gains = delta.clip(lower=0).ewm(alpha=1 / period, adjust=False).mean()
+    losses = (-delta.clip(upper=0)).ewm(alpha=1 / period, adjust=False).mean()
+    relative_strength = gains / losses.replace(0, float("nan"))
+    values = 100 - (100 / (1 + relative_strength))
+    values = values.mask((losses == 0) & (gains > 0), 100)
+    values = values.mask((gains == 0) & (losses > 0), 0)
+    return values.fillna(50)
+
+
+def prepare_signal_frame(
+    candles,
+    period=10,
+    multiplier=3.0,
+    lookback=5,
+    min_ha_body_atr=0.10,
+    max_breakout_atr=0.75,
+    min_close_location=0.70,
+    rsi_period=14,
+    bullish_rsi_min=55,
+    bearish_rsi_max=45,
+):
+    """Build one canonical signal frame for live scans and historical tests."""
     df = candles.sort_values("timestamp").reset_index(drop=True).copy()
     st, direction = supertrend(df, period, multiplier)
     hao, hac = heikin_ashi(df)
 
+    df["atr"] = atr(df, period)
     df["st"] = st
     df["direction"] = direction
     df["ha_open"] = hao
     df["ha_close"] = hac
+    df["rsi"] = rsi(df["close"], rsi_period)
     df["prev_high"] = df["high"].shift(1).rolling(lookback).max()
     df["prev_low"] = df["low"].shift(1).rolling(lookback).min()
 
+    safe_atr = df["atr"].replace(0, float("nan"))
+    candle_range = (df["high"] - df["low"]).replace(0, float("nan"))
+    df["ha_body_atr"] = (df["ha_close"] - df["ha_open"]).abs() / safe_atr
+    df["close_location"] = ((df["close"] - df["low"]) / candle_range).fillna(0.5)
+    df["bull_breakout_atr"] = (df["close"] - df["prev_high"]) / safe_atr
+    df["bear_breakout_atr"] = (df["prev_low"] - df["close"]) / safe_atr
+
+    conviction = df["ha_body_atr"] >= min_ha_body_atr
+    df["bull"] = (
+        (df["direction"] == 1)
+        & (df["ha_close"] > df["ha_open"])
+        & df["bull_breakout_atr"].between(0, max_breakout_atr, inclusive="right")
+        & conviction
+        & (df["close_location"] >= min_close_location)
+        & (df["rsi"] >= bullish_rsi_min)
+    )
+    df["bear"] = (
+        (df["direction"] == -1)
+        & (df["ha_close"] < df["ha_open"])
+        & df["bear_breakout_atr"].between(0, max_breakout_atr, inclusive="right")
+        & conviction
+        & (df["close_location"] <= 1 - min_close_location)
+        & (df["rsi"] <= bearish_rsi_max)
+    )
+    return df
+
+
+def signal_from_candles(
+    candles, period=10, multiplier=3.0, lookback=5, **quality_filters
+):
+    required = max(period + 2, lookback + 2, quality_filters.get("rsi_period", 14) + 2)
+    if candles is None or len(candles) < required:
+        return None
+    df = prepare_signal_frame(candles, period, multiplier, lookback, **quality_filters)
+
     b = df.iloc[-1]
-    bull = (
-        b["direction"] == 1 and
-        b["ha_close"] > b["ha_open"] and
-        b["close"] > b["prev_high"]
-    )
-    bear = (
-        b["direction"] == -1 and
-        b["ha_close"] < b["ha_open"] and
-        b["close"] < b["prev_low"]
-    )
+    bull = bool(b["bull"])
+    bear = bool(b["bear"])
 
     if bull:
         return {
             "option_type": "CE",
             "spot": float(b["close"]),
-            "reason": f"SuperTrend bullish + HA bullish + {lookback}-bar breakout",
+            "reason": f"Quality-filtered bullish {lookback}-bar breakout (RSI {b['rsi']:.1f})",
         }
     if bear:
         return {
             "option_type": "PE",
             "spot": float(b["close"]),
-            "reason": f"SuperTrend bearish + HA bearish + {lookback}-bar breakdown",
+            "reason": f"Quality-filtered bearish {lookback}-bar breakdown (RSI {b['rsi']:.1f})",
         }
     return None
 
@@ -174,26 +226,20 @@ def update_trailing(entry_price, old_peak, old_stop, ltp,
     }
 
 
-def signal_diagnostics(candles, period=10, multiplier=3.0, lookback=5):
+def signal_diagnostics(
+    candles, period=10, multiplier=3.0, lookback=5, **quality_filters
+):
     """
     Returns current 3-minute signal diagnostics even when no trade signal exists.
     """
-    if candles is None or len(candles) < max(period + 2, lookback + 2):
+    required = max(period + 2, lookback + 2, quality_filters.get("rsi_period", 14) + 2)
+    if candles is None or len(candles) < required:
         return {
             "ready": False,
             "reason": "Not enough 3-minute candles yet",
         }
 
-    df = candles.sort_values("timestamp").reset_index(drop=True).copy()
-    st, direction = supertrend(df, period, multiplier)
-    hao, hac = heikin_ashi(df)
-
-    df["st"] = st
-    df["direction"] = direction
-    df["ha_open"] = hao
-    df["ha_close"] = hac
-    df["prev_high"] = df["high"].shift(1).rolling(lookback).max()
-    df["prev_low"] = df["low"].shift(1).rolling(lookback).min()
+    df = prepare_signal_frame(candles, period, multiplier, lookback, **quality_filters)
 
     b = df.iloc[-1]
     bull_st = bool(b["direction"] == 1)
@@ -203,11 +249,7 @@ def signal_diagnostics(candles, period=10, multiplier=3.0, lookback=5):
     bull_break = bool(b["close"] > b["prev_high"]) if pd.notna(b["prev_high"]) else False
     bear_break = bool(b["close"] < b["prev_low"]) if pd.notna(b["prev_low"]) else False
 
-    signal = None
-    if bull_st and ha_bull and bull_break:
-        signal = "CE"
-    elif bear_st and ha_bear and bear_break:
-        signal = "PE"
+    signal = "CE" if bool(b["bull"]) else "PE" if bool(b["bear"]) else None
 
     return {
         "ready": True,
@@ -222,15 +264,22 @@ def signal_diagnostics(candles, period=10, multiplier=3.0, lookback=5):
         "previous_5bar_low": float(b["prev_low"]) if pd.notna(b["prev_low"]) else None,
         "bull_breakout": bull_break,
         "bear_breakdown": bear_break,
+        "rsi": float(b["rsi"]),
+        "ha_body_atr": float(b["ha_body_atr"]),
+        "close_location": float(b["close_location"]),
+        "bull_breakout_atr": float(b["bull_breakout_atr"]) if pd.notna(b["bull_breakout_atr"]) else None,
+        "bear_breakout_atr": float(b["bear_breakout_atr"]) if pd.notna(b["bear_breakout_atr"]) else None,
         "signal": signal,
         "bull_conditions": {
             "supertrend_bullish": bull_st,
             "ha_bullish": ha_bull,
             "five_bar_breakout": bull_break,
+            "quality_filters_passed": bool(b["bull"]),
         },
         "bear_conditions": {
             "supertrend_bearish": bear_st,
             "ha_bearish": ha_bear,
             "five_bar_breakdown": bear_break,
+            "quality_filters_passed": bool(b["bear"]),
         },
     }

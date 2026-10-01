@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from config import StrategyConfig, INDEXES
-from strategy import supertrend, heikin_ashi
+from strategy import prepare_signal_frame
 
 def _fetch_history_chunked(broker, symbol, date_from, date_to, chunk_days=30):
     """
@@ -33,34 +33,18 @@ def _fetch_history_chunked(broker, symbol, date_from, date_to, chunk_days=30):
     return out
 
 def _prepare_day(day, cfg):
-    x = day.copy().sort_values("timestamp").reset_index(drop=True)
-
-    st, direction = supertrend(
-        x,
+    return prepare_signal_frame(
+        day,
         cfg.supertrend_period,
-        cfg.supertrend_multiplier
+        cfg.supertrend_multiplier,
+        cfg.breakout_lookback,
+        min_ha_body_atr=cfg.min_ha_body_atr,
+        max_breakout_atr=cfg.max_breakout_atr,
+        min_close_location=cfg.min_close_location,
+        rsi_period=cfg.rsi_period,
+        bullish_rsi_min=cfg.bullish_rsi_min,
+        bearish_rsi_max=cfg.bearish_rsi_max,
     )
-    hao, hac = heikin_ashi(x)
-
-    x["st"] = st
-    x["direction"] = direction
-    x["ha_open"] = hao
-    x["ha_close"] = hac
-    x["prev_high"] = x["high"].shift(1).rolling(cfg.breakout_lookback).max()
-    x["prev_low"] = x["low"].shift(1).rolling(cfg.breakout_lookback).min()
-
-    x["bull"] = (
-        (x["direction"] == 1) &
-        (x["ha_close"] > x["ha_open"]) &
-        (x["close"] > x["prev_high"])
-    )
-
-    x["bear"] = (
-        (x["direction"] == -1) &
-        (x["ha_close"] < x["ha_open"]) &
-        (x["close"] < x["prev_low"])
-    )
-    return x
 
 def _forward_metrics(day, idx, side, entry_price):
     result = {}
@@ -171,6 +155,12 @@ def run_signal_backtest(
             "ha_direction": "BULLISH" if float(row["ha_close"]) > float(row["ha_open"]) else "BEARISH",
             "prev_5bar_high": float(row["prev_high"]),
             "prev_5bar_low": float(row["prev_low"]),
+            "rsi": float(row["rsi"]),
+            "ha_body_atr": float(row["ha_body_atr"]),
+            "close_location": float(row["close_location"]),
+            "breakout_atr": float(
+                row["bull_breakout_atr"] if side == "CE" else row["bear_breakout_atr"]
+            ),
             **metrics,
         })
 

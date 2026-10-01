@@ -152,7 +152,7 @@ elif page == "Backtest":
         unsafe_allow_html=True,
     )
     st.info(
-        "Runs the exact 3-minute ENTRY SIGNAL on FYERS historical index candles. "
+        "Runs the exact quality-filtered 3-minute ENTRY SIGNAL on FYERS historical index candles. "
         "The return numbers below measure directional movement of the underlying, "
         "not exact historical option-premium P&L.",
         icon="ℹ️",
@@ -181,6 +181,16 @@ elif page == "Backtest":
                 ["Approx expiry weekday only", "All trading days"],
                 horizontal=True,
             )
+            with st.expander("Active signal quality filters"):
+                st.markdown(
+                    f"""
+                    - **Trend:** SuperTrend ({cfg.supertrend_period}, {cfg.supertrend_multiplier:g})
+                    - **Momentum:** RSI ≥ {cfg.bullish_rsi_min:g} for CE or ≤ {cfg.bearish_rsi_max:g} for PE
+                    - **Candle conviction:** Heikin-Ashi body ≥ {cfg.min_ha_body_atr:g} ATR
+                    - **Close quality:** final {int((1 - cfg.min_close_location) * 100)}% of the candle in signal direction
+                    - **Anti-chase:** breakout extension ≤ {cfg.max_breakout_atr:g} ATR
+                    """
+                )
 
         if expiry_choice == "Approx expiry weekday only":
             expiry_filter = "approx_expiry_weekday"
@@ -274,6 +284,7 @@ elif page == "Backtest":
 
                 display_cols = [
                     "date", "timestamp", "signal", "underlying_entry",
+                    "rsi", "ha_body_atr", "close_location", "breakout_atr",
                     "fwd_5m_pct", "fwd_10m_pct", "fwd_20m_pct", "fwd_30m_pct",
                     "mfe_30m_pct", "mae_30m_pct"
                 ]

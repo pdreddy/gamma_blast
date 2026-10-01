@@ -51,7 +51,13 @@ def scan_index(db, broker, index_name, cfg=None, force_scan=False):
         candles,
         cfg.supertrend_period,
         cfg.supertrend_multiplier,
-        cfg.breakout_lookback
+        cfg.breakout_lookback,
+        min_ha_body_atr=cfg.min_ha_body_atr,
+        max_breakout_atr=cfg.max_breakout_atr,
+        min_close_location=cfg.min_close_location,
+        rsi_period=cfg.rsi_period,
+        bullish_rsi_min=cfg.bullish_rsi_min,
+        bearish_rsi_max=cfg.bearish_rsi_max,
     )
     if not sig:
         return {"no_trade": True, "reason": "No qualifying 3-minute signal"}
@@ -321,6 +327,12 @@ def diagnose_index(broker, index_name, cfg=None):
         cfg.supertrend_period,
         cfg.supertrend_multiplier,
         cfg.breakout_lookback,
+        min_ha_body_atr=cfg.min_ha_body_atr,
+        max_breakout_atr=cfg.max_breakout_atr,
+        min_close_location=cfg.min_close_location,
+        rsi_period=cfg.rsi_period,
+        bullish_rsi_min=cfg.bullish_rsi_min,
+        bearish_rsi_max=cfg.bearish_rsi_max,
     )
     d["index_name"] = index_name
     d["nearest_expiry"] = expiry_date.isoformat() if expiry_date else None

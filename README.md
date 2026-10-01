@@ -10,6 +10,10 @@ This version removes Upstox completely. FYERS is the only broker/data connection
 - SuperTrend(10,3)
 - Heikin-Ashi direction
 - 5-bar breakout/breakdown
+- RSI momentum confirmation (55 CE / 45 PE by default)
+- ATR-normalized Heikin-Ashi body strength filter
+- Directional close-location filter to reject weak breakout candles
+- Maximum ATR breakout extension to avoid chasing exhausted moves
 - Long CE/PE only
 - Option premium band ₹5–₹30
 - Initial premium stop: -40%
@@ -20,6 +24,10 @@ This version removes Upstox completely. FYERS is the only broker/data connection
 - Runner can continue +300%, +500%, etc. until trail or 15:25 IST hard exit
 - No averaging down
 - Maximum deployed premium is configurable; default ₹12,000
+
+The quality thresholds are configurable in `.env`. They deliberately trade less
+often to filter weak or overextended entries. They are hypotheses—not a promise
+of better returns—so compare them on unseen dates before enabling live trading.
 
 Example, entry premium ₹20:
 - initial SL ₹12
