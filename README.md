@@ -10,6 +10,10 @@ This version removes Upstox completely. FYERS is the only broker/data connection
 - SuperTrend(10,3)
 - Heikin-Ashi direction
 - 5-bar breakout/breakdown
+- RSI momentum confirmation (55 CE / 45 PE by default)
+- ATR-normalized Heikin-Ashi body strength filter
+- Directional close-location filter to reject weak breakout candles
+- Maximum ATR breakout extension to avoid chasing exhausted moves
 - Long CE/PE only
 - Option premium band ₹5–₹30
 - Initial premium stop: -40%
@@ -20,6 +24,19 @@ This version removes Upstox completely. FYERS is the only broker/data connection
 - Runner can continue +300%, +500%, etc. until trail or 15:25 IST hard exit
 - No averaging down
 - Maximum deployed premium is configurable; default ₹12,000
+
+The quality thresholds are configurable in `.env`. They deliberately trade less
+often to filter weak or overextended entries. They are hypotheses—not a promise
+of better returns—so compare them on unseen dates before enabling live trading.
+
+## Strategy versions
+
+`STRATEGY_VERSION=v1` preserves the original signal and execution path. The
+optional `v2` research modules add wall/OI, straddle, velocity, cross-index,
+futures-volume scoring, delta selection, costs, and a pure exit state machine.
+V2 is intentionally PAPER-only. When synchronized historical option/OI or
+futures data is absent, the feature is reported as unavailable and is never
+fabricated or replaced with underlying data.
 
 Example, entry premium ₹20:
 - initial SL ₹12
@@ -87,6 +104,34 @@ It checks:
 It places ZERO orders.
 
 ## UI
+
+For a fresh launch, run the one-command startup script. It creates `.venv` when
+needed, installs changed requirements, clears local Python bytecode, and starts
+Streamlit without deleting your `.env` or trading database:
+
+```bash
+./run.sh
+```
+
+On the first run, the script creates a safe `.env` template. Add your FYERS App
+ID and Secret ID, then complete the browser login and validate the connection:
+
+```bash
+./run.sh --login
+./run.sh --preflight
+./run.sh
+```
+
+FYERS access tokens expire, so use `./run.sh --login` again whenever the UI says
+the connection is not configured. The script updates only your local `.env`.
+
+You can override the interface or port when needed:
+
+```bash
+STREAMLIT_ADDRESS=0.0.0.0 STREAMLIT_PORT=8502 ./run.sh
+```
+
+Alternatively, start Streamlit directly from an already configured environment:
 
 ```bash
 streamlit run app.py

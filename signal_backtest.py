@@ -16,10 +16,7 @@ Run:
     python signal_backtest.py --index SENSEX --from 2025-10-01 --to 2026-09-30
 """
 import argparse
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 import pandas as pd
-import numpy as np
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -28,33 +25,21 @@ from config import (
     FYERS_APP_ID, FYERS_ACCESS_TOKEN
 )
 from fyers_broker import FyersBroker
-from strategy import supertrend, heikin_ashi
-
-IST = ZoneInfo("Asia/Kolkata")
+from strategy import prepare_signal_frame
 
 def prepare(df, cfg):
-    x = df.copy().sort_values("timestamp").reset_index(drop=True)
-    st, direction = supertrend(
-        x, cfg.supertrend_period, cfg.supertrend_multiplier
+    return prepare_signal_frame(
+        df,
+        cfg.supertrend_period,
+        cfg.supertrend_multiplier,
+        cfg.breakout_lookback,
+        min_ha_body_atr=cfg.min_ha_body_atr,
+        max_breakout_atr=cfg.max_breakout_atr,
+        min_close_location=cfg.min_close_location,
+        rsi_period=cfg.rsi_period,
+        bullish_rsi_min=cfg.bullish_rsi_min,
+        bearish_rsi_max=cfg.bearish_rsi_max,
     )
-    hao, hac = heikin_ashi(x)
-    x["st"] = st
-    x["direction"] = direction
-    x["ha_open"] = hao
-    x["ha_close"] = hac
-    x["prev_high"] = x["high"].shift(1).rolling(cfg.breakout_lookback).max()
-    x["prev_low"] = x["low"].shift(1).rolling(cfg.breakout_lookback).min()
-    x["bull"] = (
-        (x["direction"] == 1) &
-        (x["ha_close"] > x["ha_open"]) &
-        (x["close"] > x["prev_high"])
-    )
-    x["bear"] = (
-        (x["direction"] == -1) &
-        (x["ha_close"] < x["ha_open"]) &
-        (x["close"] < x["prev_low"])
-    )
-    return x
 
 def forward_metrics(day, idx, side, entry_price):
     out = {}
@@ -122,19 +107,13 @@ def main():
             (hhmm <= cfg.entry_end)
         ]
 
-        chosen = None
-        for idx, row in eligible.iterrows():
-            if row["bull"]:
-                chosen = (idx, "CE", row)
-                break
-            if row["bear"]:
-                chosen = (idx, "PE", row)
-                break
-
-        if not chosen:
+        signal_rows = eligible.loc[eligible["bull"] | eligible["bear"]]
+        if signal_rows.empty:
             continue
 
-        idx, side, row = chosen
+        idx = signal_rows.index[0]
+        row = signal_rows.iloc[0]
+        side = "CE" if bool(row["bull"]) else "PE"
         entry = float(row["close"])
         m = forward_metrics(x, idx, side, entry)
 

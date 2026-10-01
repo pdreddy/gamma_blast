@@ -63,6 +63,15 @@ CREATE TABLE IF NOT EXISTS events(
     payload TEXT,
     FOREIGN KEY(trade_id) REFERENCES trades(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_plans_trade_lookup
+ON plans(trade_date, index_name, status, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_trades_status
+ON trades(status, id);
+
+CREATE INDEX IF NOT EXISTS idx_events_recent
+ON events(id DESC);
 """
 
 class DB:
