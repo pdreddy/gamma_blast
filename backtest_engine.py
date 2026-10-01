@@ -149,19 +149,15 @@ def run_signal_backtest(
             (hhmm <= cfg.entry_end)
         ]
 
-        chosen = None
-        for idx, row in eligible.iterrows():
-            if bool(row["bull"]):
-                chosen = (idx, "CE", row)
-                break
-            if bool(row["bear"]):
-                chosen = (idx, "PE", row)
-                break
-
-        if chosen is None:
+        # Select the first signal with a vectorized mask. This avoids constructing
+        # a pandas Series for every candle in long, all-trading-day backtests.
+        signal_rows = eligible.loc[eligible["bull"] | eligible["bear"]]
+        if signal_rows.empty:
             continue
 
-        idx, side, row = chosen
+        idx = signal_rows.index[0]
+        row = signal_rows.iloc[0]
+        side = "CE" if bool(row["bull"]) else "PE"
         entry = float(row["close"])
         metrics = _forward_metrics(day, idx, side, entry)
 
