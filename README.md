@@ -29,6 +29,15 @@ The quality thresholds are configurable in `.env`. They deliberately trade less
 often to filter weak or overextended entries. They are hypotheses—not a promise
 of better returns—so compare them on unseen dates before enabling live trading.
 
+## Strategy versions
+
+`STRATEGY_VERSION=v1` preserves the original signal and execution path. The
+optional `v2` research modules add wall/OI, straddle, velocity, cross-index,
+futures-volume scoring, delta selection, costs, and a pure exit state machine.
+V2 is intentionally PAPER-only. When synchronized historical option/OI or
+futures data is absent, the feature is reported as unavailable and is never
+fabricated or replaced with underlying data.
+
 Example, entry premium ₹20:
 - initial SL ₹12
 - peak ₹30 (+50%) -> trailing stop ₹22.50

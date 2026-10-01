@@ -34,6 +34,20 @@ def scan_index(db, broker, index_name, cfg=None, force_scan=False):
     if not force_scan and not in_entry_window(cfg):
         return None
 
+    if cfg.strategy_version == "v2":
+        return {
+            "no_trade": True,
+            "reason": (
+                "v2 PAPER research requires synchronized historical/live option OI, "
+                "ATM straddle, cross-index and futures-volume bars. These fields are "
+                "unavailable from the current broker feed, so scoring was skipped."
+            ),
+            "strategy_version": "v2",
+            "unavailable_features": [
+                "straddle_non_decay", "wall_oi_drop", "cross_index", "futures_volume"
+            ],
+        }
+
     nearest = broker.nearest_expiry(meta["underlying"])
     if not nearest:
         raise RuntimeError(f"No FYERS expiry returned for {index_name}")
@@ -115,6 +129,9 @@ def scan_index(db, broker, index_name, cfg=None, force_scan=False):
 def execute_plan(db, broker, plan, mode, cfg=None):
     cfg = cfg or StrategyConfig()
     mode = mode.upper()
+
+    if cfg.strategy_version == "v2" and mode == "LIVE":
+        raise RuntimeError("Gamma Blast v2 is research/PAPER-only; LIVE execution is disabled.")
 
     if mode == "LIVE" and not ALLOW_LIVE_TRADING:
         raise RuntimeError(

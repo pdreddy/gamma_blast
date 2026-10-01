@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import pandas as pd
+from math import sqrt
 
 from config import StrategyConfig, INDEXES
 from strategy import prepare_signal_frame
@@ -46,11 +47,14 @@ def _prepare_day(day, cfg):
         bearish_rsi_max=cfg.bearish_rsi_max,
     )
 
+HORIZONS = (3, 5, 6, 9, 10, 12, 15, 20, 30)
+
+
 def _forward_metrics(day, idx, side, entry_price):
     result = {}
     sign = 1 if side == "CE" else -1
 
-    for mins in (5, 10, 20, 30):
+    for mins in HORIZONS:
         bars = max(1, round(mins / 3))
         j = min(idx + bars, len(day) - 1)
         future = float(day.iloc[j]["close"])
@@ -75,6 +79,7 @@ def run_signal_backtest(
     date_to,
     expiry_filter="approx_expiry_weekday",
     cfg=None,
+    all_signals=False,
 ):
     """
     Backtest the exact ENTRY SIGNAL on 3-minute underlying candles.
@@ -139,13 +144,22 @@ def run_signal_backtest(
         if signal_rows.empty:
             continue
 
-        idx = signal_rows.index[0]
-        row = signal_rows.iloc[0]
-        side = "CE" if bool(row["bull"]) else "PE"
-        entry = float(row["close"])
-        metrics = _forward_metrics(day, idx, side, entry)
+        # The default remains the exact v1 behavior. Research mode can retain
+        # later signals after a 30-minute evaluation window has closed.
+        chosen_rows = []
+        last_idx = None
+        for idx, row in signal_rows.iterrows():
+            if not all_signals and chosen_rows:
+                break
+            if last_idx is None or idx > last_idx + 10:
+                chosen_rows.append((idx, row))
+                last_idx = idx
 
-        results.append({
+        for signal_number, (idx, row) in enumerate(chosen_rows, start=1):
+            side = "CE" if bool(row["bull"]) else "PE"
+            entry = float(row["close"])
+            metrics = _forward_metrics(day, idx, side, entry)
+            results.append({
             "date": d.isoformat(),
             "timestamp": row["timestamp"],
             "index": index_name,
@@ -161,8 +175,9 @@ def run_signal_backtest(
             "breakout_atr": float(
                 row["bull_breakout_atr"] if side == "CE" else row["bear_breakout_atr"]
             ),
+            "signal_order": "first" if signal_number == 1 else "later",
             **metrics,
-        })
+            })
 
     out = pd.DataFrame(results)
 
@@ -177,7 +192,7 @@ def run_signal_backtest(
     }
 
     if not out.empty:
-        for mins in (5, 10, 20, 30):
+        for mins in HORIZONS:
             col = f"fwd_{mins}m_pct"
             summary[f"win_rate_{mins}m"] = float((out[col] > 0).mean() * 100)
             summary[f"avg_{mins}m_pct"] = float(out[col].mean())
@@ -195,6 +210,53 @@ def run_signal_backtest(
         out["month"] = pd.to_datetime(out["date"]).dt.to_period("M").astype(str)
 
     return out, summary
+
+
+def _wilson(wins, total, z=1.96):
+    if not total:
+        return (0.0, 0.0)
+    p = wins / total
+    denominator = 1 + z * z / total
+    center = (p + z * z / (2 * total)) / denominator
+    margin = z * sqrt((p * (1 - p) + z * z / (4 * total)) / total) / denominator
+    return ((center - margin) * 100, (center + margin) * 100)
+
+
+def diagnostic_slices(results, train_fraction=0.7):
+    """Long-form, chronological train/test diagnostics for dashboard/reporting."""
+    if results is None or results.empty:
+        return pd.DataFrame()
+    data = results.sort_values("timestamp").copy()
+    cutoff = max(1, min(len(data) - 1, round(len(data) * train_fraction))) if len(data) > 1 else 1
+    data["sample"] = "test"
+    data.iloc[:cutoff, data.columns.get_loc("sample")] = "train"
+    times = pd.to_datetime(data["timestamp"]).dt.strftime("%H:%M")
+    data["time_bucket"] = pd.cut(
+        pd.to_timedelta(times + ":00"),
+        bins=pd.to_timedelta(["13:45:00", "14:15:00", "14:45:00", "15:11:00"]),
+        labels=["13:45–14:15", "14:15–14:45", "14:45–15:10"], include_lowest=True,
+    ).astype(str)
+    dimensions = {"overall": pd.Series("all", index=data.index), "side": data["signal"],
+                  "entry_time": data["time_bucket"], "index": data["index"]}
+    if "signal_order" in data:
+        dimensions["signal_order"] = data["signal_order"]
+    rows = []
+    for sample, sample_data in data.groupby("sample"):
+        for dimension, values in dimensions.items():
+            sample_values = values.loc[sample_data.index]
+            for value in sample_values.unique():
+                group = sample_data.loc[sample_values == value]
+                for mins in HORIZONS:
+                    returns = group[f"fwd_{mins}m_pct"]
+                    wins = int((returns > 0).sum())
+                    low, high = _wilson(wins, len(group))
+                    rows.append({"sample": sample, "dimension": dimension, "slice": value,
+                                 "horizon_min": mins, "count": len(group), "win_rate_pct": wins / len(group) * 100,
+                                 "win_ci_low_pct": low, "win_ci_high_pct": high,
+                                 "mean_return_pct": returns.mean(), "median_return_pct": returns.median(),
+                                 "mfe_pct": group["mfe_30m_pct"].mean(), "mae_pct": group["mae_30m_pct"].mean(),
+                                 "sample_quality": "sufficient" if len(group) >= 30 else "insufficient sample"})
+    return pd.DataFrame(rows)
 
 def monthly_summary(results):
     if results is None or results.empty:

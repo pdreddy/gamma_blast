@@ -12,7 +12,7 @@ from config import (
 from db import DB
 from fyers_broker import FyersBroker
 from engine import scan_index, execute_plan, monitor_trade, parse_expiry_date, diagnose_index, create_plumbing_test_plan
-from backtest_engine import run_signal_backtest, monthly_summary
+from backtest_engine import run_signal_backtest, monthly_summary, diagnostic_slices
 
 IST = ZoneInfo("Asia/Kolkata")
 cfg = StrategyConfig()
@@ -83,6 +83,7 @@ def cached_backtest(_broker, index_name, date_from, date_to, expiry_filter, conf
         date_to,
         expiry_filter=expiry_filter,
         cfg=config,
+        all_signals=config.all_signals,
     )
 
 
@@ -105,6 +106,7 @@ st.sidebar.divider()
 st.sidebar.markdown(f"**{datetime.now(IST).strftime('%d %b %Y · %H:%M')} IST**")
 st.sidebar.caption("MARKET CLOCK")
 st.sidebar.markdown(f"`{MODE}` &nbsp; mode")
+st.sidebar.caption(f"Strategy {cfg.strategy_version.upper()}")
 st.sidebar.caption(f"₹{cfg.max_capital_per_trade:,.0f} maximum premium / trade")
 st.sidebar.divider()
 st.sidebar.caption("Risk rules · 40% initial stop · trail at +50% · 25% gap")
@@ -264,8 +266,8 @@ elif page == "Backtest":
                 chart_df = chart_df.set_index("timestamp")
                 st.line_chart(chart_df, color="#2563eb", height=360)
 
-                tab_monthly, tab_signals, tab_export = st.tabs(
-                    ["Monthly breakdown", "Signal ledger", "Export"]
+                tab_monthly, tab_slices, tab_signals, tab_export = st.tabs(
+                    ["Monthly breakdown", "Train/test diagnostics", "Signal ledger", "Export"]
                 )
                 with tab_monthly:
                     monthly = monthly_summary(results)
@@ -280,6 +282,14 @@ elif page == "Backtest":
                             "avg_30m_move_pct": st.column_config.NumberColumn("Avg 30m", format="%.3f%%"),
                             "median_30m_move_pct": st.column_config.NumberColumn("Median 30m", format="%.3f%%"),
                         },
+                    )
+
+                with tab_slices:
+                    st.caption("Wilson confidence intervals and sample-size warnings are shown for every slice.")
+                    st.dataframe(
+                        diagnostic_slices(results, cfg.train_fraction),
+                        hide_index=True,
+                        use_container_width=True,
                     )
 
                 display_cols = [
