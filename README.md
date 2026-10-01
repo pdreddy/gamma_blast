@@ -88,6 +88,22 @@ It places ZERO orders.
 
 ## UI
 
+For a fresh launch, run the one-command startup script. It creates `.venv` when
+needed, installs changed requirements, clears local Python bytecode, and starts
+Streamlit without deleting your `.env` or trading database:
+
+```bash
+./run.sh
+```
+
+You can override the interface or port when needed:
+
+```bash
+STREAMLIT_ADDRESS=0.0.0.0 STREAMLIT_PORT=8502 ./run.sh
+```
+
+Alternatively, start Streamlit directly from an already configured environment:
+
 ```bash
 streamlit run app.py
 ```
